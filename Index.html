@@ -1,0 +1,1514 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>לוח שמחות ואירועים משפחתיים</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        family: {
+                            50: '#fff7ed',
+                            100: '#ffedd5',
+                            200: '#fed7aa',
+                            300: '#fdba74',
+                            400: '#fb923c',
+                            500: '#f97316',
+                            600: '#ea580c',
+                            700: '#c2410c',
+                        },
+                        festive: {
+                            rose: '#f43f5e',
+                            amber: '#f59e0b',
+                            emerald: '#10b981',
+                            violet: '#8b5cf6',
+                            sky: '#0284c7'
+                        }
+                    },
+                    fontFamily: {
+                        sans: ['Rubik', 'Segoe UI', 'sans-serif'],
+                    }
+                }
+            }
+        }
+    </script>
+    <!-- Google Fonts for Hebrew support -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Rubik:ital,wght@0,300..800;1,300..800&display=swap" rel="stylesheet">
+    <!-- Font Awesome for Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <!-- Canvas Confetti -->
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.2/dist/confetti.browser.min.js"></script>
+
+    <!-- Firebase SDK for Real-time Cloud Sync -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { 
+            getFirestore, 
+            collection, 
+            doc, 
+            setDoc, 
+            deleteDoc, 
+            onSnapshot 
+        } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // Global instances and sync setup
+        window.FirebaseService = {
+            db: null,
+            auth: null,
+            appId: typeof __app_id !== 'undefined' ? __app_id : 'family-events-tracker-prod',
+            isCloudReady: false,
+
+            async init(onDataUpdate) {
+                try {
+                    if (typeof __firebase_config === 'undefined' || !__firebase_config) {
+                        console.warn("Cloud config not found, operating in local preview mode.");
+                        return false;
+                    }
+                    const firebaseConfig = JSON.parse(__firebase_config);
+                    const app = initializeApp(firebaseConfig);
+                    const auth = getAuth(app);
+                    const db = getFirestore(app);
+                    this.db = db;
+                    this.auth = auth;
+
+                    // Authentication: Custom token if provided, else anonymous
+                    if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                        await signInWithCustomToken(auth, __initial_auth_token);
+                    } else {
+                        await signInAnonymously(auth);
+                    }
+
+                    if (!auth.currentUser) return false;
+
+                    this.isCloudReady = true;
+                    this.listenToEvents(onDataUpdate);
+                    return true;
+                } catch (err) {
+                    console.error("Firebase init failed:", err);
+                    return false;
+                }
+            },
+
+            listenToEvents(callback) {
+                if (!this.db || !this.auth.currentUser) return;
+                const eventsCol = collection(this.db, 'artifacts', this.appId, 'public', 'data', 'events');
+                
+                onSnapshot(eventsCol, (snapshot) => {
+                    const loadedEvents = [];
+                    snapshot.forEach(docSnap => {
+                        loadedEvents.push({ id: docSnap.id, ...docSnap.data() });
+                    });
+                    callback(loadedEvents);
+                }, (error) => {
+                    console.error("Real-time sync error:", error);
+                });
+            },
+
+            async saveEvent(eventData) {
+                if (!this.db || !this.auth.currentUser) return false;
+                const eventId = eventData.id;
+                const docRef = doc(this.db, 'artifacts', this.appId, 'public', 'data', 'events', eventId);
+                const payload = { ...eventData };
+                delete payload.id;
+                await setDoc(docRef, payload);
+                return true;
+            },
+
+            async deleteEvent(eventId) {
+                if (!this.db || !this.auth.currentUser) return false;
+                const docRef = doc(this.db, 'artifacts', this.appId, 'public', 'data', 'events', eventId);
+                await deleteDoc(docRef);
+                return true;
+            }
+        };
+    </script>
+
+    <style>
+        body {
+            font-family: 'Rubik', sans-serif;
+            background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 40%, #ffedd5 100%);
+            min-height: 100vh;
+        }
+        /* Custom scrollbars */
+        ::-webkit-scrollbar {
+            width: 7px;
+            height: 7px;
+        }
+        ::-webkit-scrollbar-track {
+            background: rgba(254, 215, 170, 0.4);
+            border-radius: 9999px;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #fb923c;
+            border-radius: 9999px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #ea580c;
+        }
+        .event-card-bounce:hover {
+            transform: translateY(-4px);
+            transition: all 0.25s ease-out;
+        }
+        .today-glow {
+            box-shadow: 0 0 20px rgba(249, 115, 22, 0.55);
+            animation: pulse-glow 2.5s infinite ease-in-out;
+        }
+        @keyframes pulse-glow {
+            0%, 100% { box-shadow: 0 0 15px rgba(249, 115, 22, 0.45); }
+            50% { box-shadow: 0 0 25px rgba(239, 68, 68, 0.7); }
+        }
+    </style>
+</head>
+<body class="text-stone-800 antialiased p-3 sm:p-6 lg:p-8">
+
+    <div class="max-w-7xl mx-auto space-y-6">
+        
+        <!-- Header Banner -->
+        <header class="bg-gradient-to-r from-amber-500 via-orange-500 to-rose-500 rounded-3xl p-6 sm:p-8 text-white shadow-xl relative overflow-hidden flex flex-col md:flex-row items-center justify-between gap-6">
+            <div class="absolute -right-10 -bottom-10 opacity-15 text-white text-9xl pointer-events-none select-none">
+                <i class="fa-solid fa-cake-candles"></i>
+            </div>
+            <div class="relative z-10 text-center md:text-right">
+                <div class="inline-flex items-center gap-2 bg-white/20 backdrop-blur-md px-3.5 py-1 rounded-full text-sm font-medium mb-3">
+                    <i class="fa-solid fa-heart text-amber-200"></i>
+                    <span>שומרים על קשר משפחתי חם ושמח</span>
+                </div>
+                <h1 class="text-3xl sm:text-4xl lg:text-5xl font-black tracking-tight drop-shadow-sm">
+                    שמחות ואירועים במשפחה
+                </h1>
+                <p class="text-orange-100 text-sm sm:text-base mt-2 max-w-xl">
+                    כל ימי ההולדת, ימי הנישואין והמועדים החשובים של שתי המשפחות במקום אחד. לא מפספסים אף חגיגה!
+                </p>
+            </div>
+
+            <!-- Action buttons header -->
+            <div class="flex flex-wrap items-center justify-center gap-3 relative z-10">
+                <button onclick="openModal()" class="bg-white text-orange-600 hover:bg-orange-50 active:scale-95 transition px-5 py-3 rounded-2xl font-bold shadow-md hover:shadow-lg flex items-center gap-2 text-sm sm:text-base">
+                    <i class="fa-solid fa-plus-circle text-orange-500 text-lg"></i>
+                    <span>הוספת אירוע / יום הולדת</span>
+                </button>
+                <button onclick="openWishModal()" class="bg-amber-400/90 text-amber-950 hover:bg-amber-300 active:scale-95 transition px-4 py-3 rounded-2xl font-bold shadow-md flex items-center gap-2 text-sm sm:text-base">
+                    <i class="fa-solid fa-wand-magic-sparkles text-amber-800"></i>
+                    <span>מחולל ברכות</span>
+                </button>
+                <button onclick="toggleHelpGuide()" class="bg-white/20 hover:bg-white/30 text-white px-3.5 py-3 rounded-2xl font-bold transition flex items-center gap-1 text-sm">
+                    <i class="fa-solid fa-circle-question text-base"></i>
+                    <span>איך להזין?</span>
+                </button>
+                <button onclick="launchCelebrationConfetti()" title="זרוק קונפטי" class="bg-white/20 hover:bg-white/30 text-white w-12 h-12 rounded-2xl flex items-center justify-center transition active:scale-90">
+                    <i class="fa-solid fa-champagne-glasses text-xl"></i>
+                </button>
+            </div>
+        </header>
+
+        <!-- Help & Instructions Accordion Banner -->
+        <div id="helpGuideBanner" class="hidden bg-amber-50 border border-amber-200 rounded-3xl p-5 sm:p-6 text-stone-800 space-y-4">
+            <div class="flex items-center justify-between pb-2 border-b border-amber-200">
+                <h3 class="font-bold text-base sm:text-lg text-amber-900 flex items-center gap-2">
+                    <i class="fa-solid fa-lightbulb text-amber-600"></i>
+                    מדריך קצר: איך להזין ימי הולדת ולנהל את הלוח המשפחתי
+                </h3>
+                <button onclick="toggleHelpGuide()" class="text-stone-400 hover:text-stone-600">
+                    <i class="fa-solid fa-xmark text-lg"></i>
+                </button>
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs sm:text-sm">
+                <div class="bg-white p-3.5 rounded-2xl border border-amber-100 space-y-1">
+                    <span class="font-bold text-orange-600 flex items-center gap-1.5"><i class="fa-solid fa-1"></i> הוספת יום הולדת חדש</span>
+                    <p class="text-stone-600">לוחצים על <b>"הוספת אירוע / יום הולדת"</b>, בוחרים סוג "יום הולדת", מקלידים את השם והתאריך. במידה ומזינים <b>שנת לידה</b>, המערכת תחשב לבד איזה גיל נחגג בכל שנה!</p>
+                </div>
+                <div class="bg-white p-3.5 rounded-2xl border border-amber-100 space-y-1">
+                    <span class="font-bold text-rose-600 flex items-center gap-1.5"><i class="fa-solid fa-2"></i> מחיקת דוגמאות קיימות</span>
+                    <p class="text-stone-600">בכל כרטיס אירוע יש אייקון פח אשפה (<i class="fa-regular fa-trash-can text-rose-500"></i>). לחיצה עליו מוחקת את האירוע. אפשר גם ללחוץ על הכפתור האדום למטה <b>"מחיקת כל דוגמאות המערכת"</b> לניקוי מהיר.</p>
+                </div>
+                <div class="bg-white p-3.5 rounded-2xl border border-amber-100 space-y-1">
+                    <span class="font-bold text-emerald-600 flex items-center gap-1.5"><i class="fa-solid fa-3"></i> גיבוי ושמירה</span>
+                    <p class="text-stone-600">המידע נשמר ישירות בדפדפן שלכם. תוכלו גם ללחוץ על <b>"ייצוא גיבוי לקובץ"</b> למטה כדי לשמור קובץ גיבוי של כל המשפחה במחשב או בטלפון בכל עת.</p>
+                </div>
+            </div>
+        </div>
+
+        <section class="bg-white/90 backdrop-blur-md rounded-2xl p-4 sm:p-5 shadow-md border border-orange-100/80 flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-4">
+            <!-- Family Branch Filters -->
+            <div class="flex flex-wrap items-center gap-2">
+                <span class="text-xs font-bold text-stone-500 uppercase tracking-wider ml-1">צד משפחה:</span>
+                <button onclick="setBranchFilter('all')" id="btn-branch-all" class="filter-branch-btn px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition shadow-sm bg-orange-500 text-white">
+                    כל המשפחה
+                </button>
+                <button onclick="setBranchFilter('my_side')" id="btn-branch-my_side" class="filter-branch-btn px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold transition bg-stone-100 hover:bg-orange-100 text-stone-700">
+                    <i class="fa-solid fa-house-user ml-1 text-orange-500"></i> המשפחה שלי
+                </button>
+                <button onclick="setBranchFilter('partner_side')" id="btn-branch-partner_side" class="filter-branch-btn px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold transition bg-stone-100 hover:bg-rose-100 text-stone-700">
+                    <i class="fa-solid fa-heart ml-1 text-rose-500"></i> משפחת בן/בת הזוג
+                </button>
+                <button onclick="setBranchFilter('both')" id="btn-branch-both" class="filter-branch-btn px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold transition bg-stone-100 hover:bg-amber-100 text-stone-700">
+                    <i class="fa-solid fa-users ml-1 text-amber-600"></i> משותף לשנינו
+                </button>
+            </div>
+
+            <!-- Event Type & Search Filters -->
+            <div class="flex flex-wrap items-center gap-3">
+                <div class="relative flex-1 sm:w-56">
+                    <i class="fa-solid fa-magnifying-glass absolute right-3.5 top-1/2 -translate-y-1/2 text-stone-400 text-sm"></i>
+                    <input type="text" id="searchInput" oninput="renderApp()" placeholder="חיפוש לפי שם או תיאור..." 
+                           class="w-full pl-3 pr-9 py-2 bg-stone-50 border border-stone-200 rounded-xl text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-orange-400 focus:bg-white transition">
+                </div>
+                
+                <select id="eventTypeFilter" onchange="renderApp()" class="px-3 py-2 bg-stone-50 border border-stone-200 rounded-xl text-xs sm:text-sm font-semibold text-stone-700 focus:outline-none focus:ring-2 focus:ring-orange-400 cursor-pointer">
+                    <option value="all">כל סוגי האירועים</option>
+                    <option value="birthday">🎂 ימי הולדת</option>
+                    <option value="anniversary">💍 ימי נישואין</option>
+                    <option value="bar_mitzvah">✡️ בר / בת מצווה</option>
+                    <option value="army">🪖 גיוס / שחרור</option>
+                    <option value="memorial">🕯️ אזכרה / זיכרון</option>
+                    <option value="other">✨ אירוע אחר</option>
+                </select>
+
+                <!-- Toggle View Mode: Chronological vs Calendar -->
+                <div class="flex items-center bg-stone-100 p-1 rounded-xl">
+                    <button onclick="switchTab('timeline')" id="tab-timeline-btn" class="px-3 py-1.5 rounded-lg text-xs font-bold transition bg-white shadow-sm text-orange-600">
+                        <i class="fa-solid fa-list-ol ml-1"></i> ציר זמן
+                    </button>
+                    <button onclick="switchTab('calendar')" id="tab-calendar-btn" class="px-3 py-1.5 rounded-lg text-xs font-bold transition text-stone-600 hover:text-stone-900">
+                        <i class="fa-regular fa-calendar-days ml-1"></i> לוח חודשי
+                    </button>
+                </div>
+            </div>
+        </section>
+
+        <main>
+            <!-- Timeline / Chronological View -->
+            <div id="timelineView" class="space-y-6">
+                <!-- Highlights Banner: Today / Upcoming this week -->
+                <div id="urgentHighlights" class="hidden"></div>
+
+                <!-- Event Cards List -->
+                <div class="flex items-center justify-between">
+                    <h2 class="text-xl font-bold text-stone-800 flex items-center gap-2">
+                        <span class="w-3 h-3 rounded-full bg-orange-500 inline-block"></span>
+                        אירועים קרובים לפי סדר כרונולוגי
+                        <span id="filteredCountBadge" class="bg-orange-100 text-orange-700 text-xs font-bold px-2 py-0.5 rounded-full">0</span>
+                    </h2>
+                    <span class="text-xs text-stone-500 font-medium hidden sm:inline">מחושב מ-365 הימים הבאים</span>
+                </div>
+
+                <div id="eventsContainer" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+                    <!-- Cards will be populated by JavaScript -->
+                </div>
+            </div>
+
+            <!-- Calendar Month View -->
+            <div id="calendarView" class="hidden space-y-4">
+                <div class="bg-white rounded-3xl p-5 sm:p-7 shadow-lg border border-orange-100/70">
+                    <!-- Calendar Header Controls -->
+                    <div class="flex items-center justify-between mb-6 pb-4 border-b border-stone-100">
+                        <div class="flex items-center gap-3">
+                            <button onclick="changeMonth(-1)" class="w-10 h-10 rounded-xl bg-stone-100 hover:bg-orange-100 text-stone-700 hover:text-orange-600 flex items-center justify-center transition active:scale-95">
+                                <i class="fa-solid fa-chevron-right text-sm"></i>
+                            </button>
+                            <h3 id="calendarMonthTitle" class="text-xl sm:text-2xl font-black text-stone-800 min-w-44 text-center"></h3>
+                            <button onclick="changeMonth(1)" class="w-10 h-10 rounded-xl bg-stone-100 hover:bg-orange-100 text-stone-700 hover:text-orange-600 flex items-center justify-center transition active:scale-95">
+                                <i class="fa-solid fa-chevron-left text-sm"></i>
+                            </button>
+                        </div>
+
+                        <div class="flex items-center gap-2">
+                            <button onclick="goToCurrentMonth()" class="px-3.5 py-2 text-xs font-bold rounded-xl border border-stone-200 bg-stone-50 hover:bg-stone-100 transition">
+                                החודש הנוכחי
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Days of Week (Sunday to Saturday) -->
+                    <div class="grid grid-cols-7 gap-1 sm:gap-2 text-center text-xs font-bold text-stone-500 mb-2">
+                        <div class="py-2">ראשון</div>
+                        <div class="py-2">שני</div>
+                        <div class="py-2">שלישי</div>
+                        <div class="py-2">רביעי</div>
+                        <div class="py-2">חמישי</div>
+                        <div class="py-2">שישי</div>
+                        <div class="py-2 text-rose-500">שבת</div>
+                    </div>
+
+                    <!-- Calendar Grid -->
+                    <div id="calendarGrid" class="grid grid-cols-7 gap-1 sm:gap-2">
+                        <!-- Injected via JavaScript -->
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        <!-- Footer Management Toolbar: Clear Demo Data & Backup/Restore -->
+        <footer class="bg-white/80 backdrop-blur-md border border-orange-100 rounded-3xl p-4 sm:p-5 flex flex-wrap items-center justify-between gap-4 text-xs">
+            <div class="flex items-center gap-3 text-stone-600">
+                <div class="flex items-center gap-2">
+                    <span id="cloudStatusIndicator" class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-800 font-bold text-[11px]">
+                        <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                        <span id="cloudStatusText">ענן משותף פעיל ומסונכרן</span>
+                    </span>
+                </div>
+                <span>סה״כ אירועים: <b id="totalSavedCounter" class="text-stone-900 font-bold">0</b></span>
+            </div>
+
+            <div class="flex flex-wrap items-center gap-2">
+                <button onclick="clearAllDemoEvents()" class="px-3.5 py-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold transition flex items-center gap-1.5">
+                    <i class="fa-regular fa-trash-can"></i>
+                    <span>איפוס/מחיקת כל האירועים</span>
+                </button>
+                <button onclick="exportFamilyData()" class="px-3.5 py-2 rounded-xl bg-stone-100 hover:bg-stone-200 text-stone-700 font-bold transition flex items-center gap-1.5">
+                    <i class="fa-solid fa-download"></i>
+                    <span>ייצוא גיבוי לקובץ</span>
+                </button>
+                <label class="cursor-pointer px-3.5 py-2 rounded-xl bg-stone-100 hover:bg-stone-200 text-stone-700 font-bold transition flex items-center gap-1.5">
+                    <i class="fa-solid fa-upload"></i>
+                    <span>טעינת גיבוי</span>
+                    <input type="file" id="importFileInput" accept=".json" onchange="importFamilyData(event)" class="hidden">
+                </label>
+            </div>
+        </footer>
+    </div>
+
+    <div id="eventModal" class="fixed inset-0 bg-stone-900/60 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4 overflow-y-auto">
+        <div class="bg-white rounded-3xl max-w-lg w-full p-6 sm:p-8 shadow-2xl relative border border-orange-100 my-8">
+            <button onclick="closeModal()" class="absolute top-5 left-5 text-stone-400 hover:text-stone-700 w-8 h-8 rounded-full flex items-center justify-center bg-stone-100">
+                <i class="fa-solid fa-xmark text-lg"></i>
+            </button>
+            
+            <div class="flex items-center gap-3 mb-5">
+                <div class="w-12 h-12 rounded-2xl bg-orange-100 text-orange-600 flex items-center justify-center text-xl font-bold">
+                    <i id="modalIcon" class="fa-solid fa-calendar-plus"></i>
+                </div>
+                <div>
+                    <h3 id="modalTitle" class="text-xl font-black text-stone-800">הוספת אירוע משפחתי חדש</h3>
+                    <p class="text-xs text-stone-500">הזינו את פרטי האירוע כדי שיופיע בלוח השנה ובספירה לאחור</p>
+                </div>
+            </div>
+
+            <form id="eventForm" onsubmit="handleSaveEvent(event)" class="space-y-4 text-sm">
+                <input type="hidden" id="editEventId" value="">
+
+                <!-- Name of Person/Subject -->
+                <div>
+                    <label class="block font-bold text-stone-700 mb-1">שם בן / בת המשפחה או האירוע *</label>
+                    <input type="text" id="formName" required placeholder="למשל: סבא יוסי, מאיה ולביא, דניאל" 
+                           class="w-full px-3.5 py-2.5 rounded-xl border border-stone-200 focus:ring-2 focus:ring-orange-400 focus:outline-none">
+                </div>
+
+                <!-- Event Type & Branch -->
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                        <label class="block font-bold text-stone-700 mb-1">סוג אירוע *</label>
+                        <select id="formType" required class="w-full px-3.5 py-2.5 rounded-xl border border-stone-200 focus:ring-2 focus:ring-orange-400 focus:outline-none bg-white">
+                            <option value="birthday">🎂 יום הולדת</option>
+                            <option value="anniversary">💍 יום נישואין</option>
+                            <option value="bar_mitzvah">✡️ בר / בת מצווה</option>
+                            <option value="army">🪖 גיוס / שחרור</option>
+                            <option value="memorial">🕯️ אזכרה / יום זיכרון</option>
+                            <option value="other">✨ אחר</option>
+                        </select>
+                    </div>
+
+                    <div>
+                        <label class="block font-bold text-stone-700 mb-1">שיוך משפחתי *</label>
+                        <select id="formBranch" required class="w-full px-3.5 py-2.5 rounded-xl border border-stone-200 focus:ring-2 focus:ring-orange-400 focus:outline-none bg-white">
+                            <option value="my_side">🏠 המשפחה שלי</option>
+                            <option value="partner_side">❤️ משפחת בן/בת הזוג</option>
+                            <option value="both">👥 משותף לשניהם</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- Date and Year of origin -->
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                        <label class="block font-bold text-stone-700 mb-1">תאריך האירוע (יום וחודש) *</label>
+                        <input type="date" id="formDate" required 
+                               class="w-full px-3.5 py-2.5 rounded-xl border border-stone-200 focus:ring-2 focus:ring-orange-400 focus:outline-none">
+                    </div>
+
+                    <div>
+                        <label class="block font-bold text-stone-700 mb-1">
+                            שנת התחלה (לחישוב גיל)
+                            <span class="text-xs text-stone-400 font-normal">רשות</span>
+                        </label>
+                        <input type="number" id="formOriginalYear" min="1920" max="2030" placeholder="למשל: 1988 או 2015"
+                               class="w-full px-3.5 py-2.5 rounded-xl border border-stone-200 focus:ring-2 focus:ring-orange-400 focus:outline-none">
+                    </div>
+                </div>
+
+                <!-- Phone number for WhatsApp -->
+                <div>
+                    <label class="block font-bold text-stone-700 mb-1">
+                        מספר טלפון לברכות בוואטסאפ
+                        <span class="text-xs text-stone-400 font-normal">(רשות, לחיצה תפתח שיחה)</span>
+                    </label>
+                    <div class="relative">
+                        <i class="fa-brands fa-whatsapp text-emerald-500 absolute left-3.5 top-1/2 -translate-y-1/2 text-lg"></i>
+                        <input type="tel" id="formPhone" placeholder="050-1234567 או 972501234567" 
+                               class="w-full px-3.5 py-2.5 rounded-xl border border-stone-200 focus:ring-2 focus:ring-orange-400 focus:outline-none text-left" dir="ltr">
+                    </div>
+                </div>
+
+                <!-- Notes / Additional Details -->
+                <div>
+                    <label class="block font-bold text-stone-700 mb-1">הערות ורעיונות (מתנות, תחביבים)</label>
+                    <textarea id="formNotes" rows="2" placeholder="לדוגמה: אוהב ספרים על היסטוריה, לחגוג במסעדה איטלקית..." 
+                              class="w-full px-3.5 py-2 rounded-xl border border-stone-200 focus:ring-2 focus:ring-orange-400 focus:outline-none"></textarea>
+                </div>
+
+                <!-- Form Submit buttons -->
+                <div class="flex items-center justify-end gap-3 pt-3 border-t border-stone-100">
+                    <button type="button" onclick="closeModal()" class="px-5 py-2.5 rounded-xl font-bold text-stone-600 hover:bg-stone-100 transition">
+                        ביטול
+                    </button>
+                    <button type="submit" class="px-6 py-2.5 rounded-xl font-bold bg-gradient-to-r from-orange-500 to-amber-500 text-white hover:from-orange-600 hover:to-amber-600 shadow-md transition active:scale-95">
+                        שמירת אירוע
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div id="wishModal" class="fixed inset-0 bg-stone-900/60 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4 overflow-y-auto">
+        <div class="bg-white rounded-3xl max-w-lg w-full p-6 sm:p-8 shadow-2xl relative border border-amber-200 my-8">
+            <button onclick="closeWishModal()" class="absolute top-5 left-5 text-stone-400 hover:text-stone-700 w-8 h-8 rounded-full flex items-center justify-center bg-stone-100">
+                <i class="fa-solid fa-xmark text-lg"></i>
+            </button>
+            
+            <div class="flex items-center gap-3 mb-5">
+                <div class="w-12 h-12 rounded-2xl bg-amber-100 text-amber-600 flex items-center justify-center text-xl font-bold">
+                    <i class="fa-solid fa-wand-magic-sparkles"></i>
+                </div>
+                <div>
+                    <h3 class="text-xl font-black text-stone-800">מחולל ברכות אישיות</h3>
+                    <p class="text-xs text-stone-500">בחרו סגנון וצרו ברכה חמה לשליחה מיידית בוואטסאפ</p>
+                </div>
+            </div>
+
+            <div class="space-y-4 text-sm">
+                <div>
+                    <label class="block font-bold text-stone-700 mb-1">עבור מי הברכה?</label>
+                    <input type="text" id="wishTargetName" placeholder="למשל: סבתא שרה, יוסי, נועם" 
+                           class="w-full px-3.5 py-2.5 rounded-xl border border-stone-200 focus:ring-2 focus:ring-amber-400 focus:outline-none">
+                </div>
+
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block font-bold text-stone-700 mb-1">סוג האירוע</label>
+                        <select id="wishEventType" class="w-full px-3 py-2 rounded-xl border border-stone-200 bg-white focus:outline-none">
+                            <option value="birthday">יום הולדת</option>
+                            <option value="anniversary">יום נישואין</option>
+                            <option value="bar_mitzvah">בר/בת מצווה</option>
+                            <option value="army">גיוס לצבא</option>
+                            <option value="general">שמחה ואיחול כללי</option>
+                        </select>
+                    </div>
+
+                    <div>
+                        <label class="block font-bold text-stone-700 mb-1">סגנון הברכה</label>
+                        <select id="wishTone" class="w-full px-3 py-2 rounded-xl border border-stone-200 bg-white focus:outline-none">
+                            <option value="warm">מרגש וחם מהלב</option>
+                            <option value="funny">קליל ומצחיק</option>
+                            <option value="short">קצר וקולע</option>
+                            <option value="traditional">מסורתי ומבורך</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div>
+                    <button onclick="generateCustomWish()" class="w-full py-2.5 bg-amber-500 hover:bg-amber-600 text-white font-bold rounded-xl transition flex items-center justify-center gap-2 shadow-sm">
+                        <i class="fa-solid fa-sparkles"></i>
+                        <span>חולל נוסח ברכה</span>
+                    </button>
+                </div>
+
+                <!-- Result Box -->
+                <div class="relative mt-2">
+                    <label class="block font-bold text-stone-700 mb-1">נוסח הברכה המוצע:</label>
+                    <textarea id="wishOutputText" rows="4" class="w-full p-3.5 bg-amber-50/50 border border-amber-200 rounded-2xl text-stone-800 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 leading-relaxed"></textarea>
+                </div>
+
+                <!-- Phone to send -->
+                <div>
+                    <label class="block font-bold text-stone-700 mb-1">מספר טלפון לשליחה (רשות):</label>
+                    <input type="tel" id="wishTargetPhone" placeholder="050-XXXXXXX" dir="ltr"
+                           class="w-full px-3.5 py-2.5 rounded-xl border border-stone-200 focus:ring-2 focus:ring-amber-400 focus:outline-none text-left">
+                </div>
+
+                <!-- Action buttons -->
+                <div class="flex items-center gap-2 pt-2">
+                    <button onclick="copyWishText()" class="flex-1 py-2.5 px-4 bg-stone-100 hover:bg-stone-200 text-stone-700 font-bold rounded-xl transition flex items-center justify-center gap-2">
+                        <i class="fa-regular fa-copy"></i>
+                        <span id="copyWishBtnLabel">העתקת ברכה</span>
+                    </button>
+                    <button onclick="sendWishViaWhatsApp()" class="flex-1 py-2.5 px-4 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl transition flex items-center justify-center gap-2 shadow-md">
+                        <i class="fa-brands fa-whatsapp text-lg"></i>
+                        <span>שליחה בוואטסאפ</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="toastNotification" class="fixed bottom-6 right-6 z-50 bg-stone-900 text-white px-5 py-3 rounded-2xl shadow-xl flex items-center gap-3 transition-all duration-300 transform translate-y-20 opacity-0 pointer-events-none">
+        <i id="toastIcon" class="fa-solid fa-check-circle text-emerald-400 text-lg"></i>
+        <span id="toastMessage" class="text-sm font-semibold">פעולה הושלמה בהצלחה</span>
+    </div>
+
+    <script>
+        // --- DATA STATE & INITIAL SEEDING ---
+        const STORAGE_KEY = 'family_events_master_v1';
+
+        // Initial default dataset so the user has immediate rich data to explore
+        const defaultEvents = [
+            {
+                id: 'evt-1',
+                name: 'אמא שרה',
+                type: 'birthday',
+                branch: 'my_side',
+                date: '1962-10-12',
+                originalYear: 1962,
+                phone: '0521234567',
+                notes: 'אוהבת עציצים וסדנאות יצירה'
+            },
+            {
+                id: 'evt-2',
+                name: 'יוסי ורונית',
+                type: 'anniversary',
+                branch: 'both',
+                date: '2016-10-24',
+                originalYear: 2016,
+                phone: '0547654321',
+                notes: 'יום נישואין עשירי! להביא יין טוב'
+            },
+            {
+                id: 'evt-3',
+                name: 'נועם (בן דוד)',
+                type: 'army',
+                branch: 'partner_side',
+                date: '2023-11-05',
+                originalYear: 2023,
+                phone: '0509988776',
+                notes: 'גיוס לצנחנים'
+            },
+            {
+                id: 'evt-4',
+                name: 'אבא דוד',
+                type: 'birthday',
+                branch: 'partner_side',
+                date: '1960-11-18',
+                originalYear: 1960,
+                phone: '0581122334',
+                notes: 'אוהב שוקולד מריר איכותי וספרי היסטוריה'
+            },
+            {
+                id: 'evt-5',
+                name: 'עמית הקטן',
+                type: 'bar_mitzvah',
+                branch: 'my_side',
+                date: '2013-12-08',
+                originalYear: 2013,
+                phone: '',
+                notes: 'חוגגים בר מצווה בכותל'
+            },
+            {
+                id: 'evt-6',
+                name: 'סבתא רחל ז״ל',
+                type: 'memorial',
+                branch: 'my_side',
+                date: '2018-10-09',
+                originalYear: 2018,
+                phone: '',
+                notes: 'עלייה לבית העלמין והדלקת נר נשמה'
+            }
+        ];
+
+        let events = [];
+        let currentFilterBranch = 'all';
+        let currentTab = 'timeline';
+        let calendarDate = new Date();
+        let isUsingCloud = false;
+
+        // Metadata definitions for event types
+        const typeMetadata = {
+            birthday: {
+                label: 'יום הולדת',
+                icon: 'fa-cake-candles',
+                color: 'bg-rose-100 text-rose-800',
+                badgeBg: 'bg-rose-500'
+            },
+            anniversary: {
+                label: 'יום נישואין',
+                icon: 'fa-ring',
+                color: 'bg-amber-100 text-amber-800',
+                badgeBg: 'bg-amber-500'
+            },
+            bar_mitzvah: {
+                label: 'בר / בת מצווה',
+                icon: 'fa-star-of-david',
+                color: 'bg-indigo-100 text-indigo-800',
+                badgeBg: 'bg-indigo-500'
+            },
+            army: {
+                label: 'גיוס / שחרור',
+                icon: 'fa-shield-halved',
+                color: 'bg-emerald-100 text-emerald-800',
+                badgeBg: 'bg-emerald-500'
+            },
+            memorial: {
+                label: 'אזכרה / זיכרון',
+                icon: 'fa-fire-flame-simple',
+                color: 'bg-stone-200 text-stone-800',
+                badgeBg: 'bg-stone-600'
+            },
+            other: {
+                label: 'אירוע מיוחד',
+                icon: 'fa-sparkles',
+                color: 'bg-purple-100 text-purple-800',
+                badgeBg: 'bg-purple-500'
+            }
+        };
+
+        const branchMetadata = {
+            my_side: { label: 'המשפחה שלי', tagClass: 'bg-orange-100 text-orange-800' },
+            partner_side: { label: 'משפחת בן/בת הזוג', tagClass: 'bg-pink-100 text-pink-800' },
+            both: { label: 'משותף לשנינו', tagClass: 'bg-teal-100 text-teal-800' }
+        };
+
+        // Custom confirmation modal helper
+        function showConfirmModal(message, onConfirm) {
+            const existing = document.getElementById('customConfirmModal');
+            if (existing) existing.remove();
+
+            const modalHtml = `
+                <div id="customConfirmModal" class="fixed inset-0 bg-stone-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                    <div class="bg-white rounded-3xl max-w-sm w-full p-6 text-center space-y-4 shadow-2xl border border-orange-100">
+                        <div class="w-12 h-12 rounded-full bg-rose-100 text-rose-600 flex items-center justify-center mx-auto text-xl font-bold">
+                            <i class="fa-solid fa-triangle-exclamation"></i>
+                        </div>
+                        <h4 class="text-base font-bold text-stone-800">${escapeHtml(message)}</h4>
+                        <div class="flex items-center justify-center gap-3 pt-2">
+                            <button id="cancelConfirmBtn" class="px-4 py-2 rounded-xl text-stone-600 hover:bg-stone-100 font-bold text-xs transition">ביטול</button>
+                            <button id="okConfirmBtn" class="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs shadow-md transition">אישור</button>
+                        </div>
+                    </div>
+                </div>
+            `;
+            document.body.insertAdjacentHTML('beforeend', modalHtml);
+            document.getElementById('cancelConfirmBtn').onclick = () => {
+                document.getElementById('customConfirmModal').remove();
+            };
+            document.getElementById('okConfirmBtn').onclick = () => {
+                document.getElementById('customConfirmModal').remove();
+                onConfirm();
+            };
+        }
+
+        async function initDataSync() {
+            if (window.FirebaseService) {
+                const connected = await window.FirebaseService.init((cloudEvents) => {
+                    events = cloudEvents;
+                    isUsingCloud = true;
+                    updateCloudBadge(true);
+                    renderApp();
+                });
+
+                if (connected) {
+                    isUsingCloud = true;
+                    updateCloudBadge(true);
+                    return;
+                }
+            }
+
+            // Fallback for standalone / preview
+            loadLocalEvents();
+            updateCloudBadge(false);
+            renderApp();
+        }
+
+        function updateCloudBadge(online) {
+            const ind = document.getElementById('cloudStatusIndicator');
+            const txt = document.getElementById('cloudStatusText');
+            if (!ind || !txt) return;
+
+            if (online) {
+                ind.className = "inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-800 font-bold text-[11px]";
+                ind.innerHTML = `<span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span><span>ענן משותף פעיל - כולם רואים הכל</span>`;
+            } else {
+                ind.className = "inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-100 text-amber-800 font-bold text-[11px]";
+                ind.innerHTML = `<span class="w-2 h-2 rounded-full bg-amber-500"></span><span>שמירה מקומית</span>`;
+            }
+        }
+
+        function loadLocalEvents() {
+            try {
+                const stored = localStorage.getItem(STORAGE_KEY);
+                if (stored) {
+                    events = JSON.parse(stored);
+                } else {
+                    events = defaultEvents;
+                    localStorage.setItem(STORAGE_KEY, JSON.stringify(events));
+                }
+            } catch (e) {
+                events = defaultEvents;
+            }
+        }
+
+        async function handleSaveEvent(e) {
+            e.preventDefault();
+            const editId = document.getElementById('editEventId').value;
+            const name = document.getElementById('formName').value.trim();
+            const type = document.getElementById('formType').value;
+            const branch = document.getElementById('formBranch').value;
+            const date = document.getElementById('formDate').value;
+            const originalYearVal = document.getElementById('formOriginalYear').value.trim();
+            const originalYear = originalYearVal ? parseInt(originalYearVal, 10) : null;
+            const phone = document.getElementById('formPhone').value.trim();
+            const notes = document.getElementById('formNotes').value.trim();
+
+            if (!name || !date) {
+                showToast('אנא מלאו שם ותאריך', true);
+                return;
+            }
+
+            const targetId = editId || ('evt-' + Date.now());
+            const eventPayload = {
+                id: targetId,
+                name,
+                type,
+                branch,
+                date,
+                originalYear,
+                phone,
+                notes,
+                updatedAt: new Date().toISOString()
+            };
+
+            if (isUsingCloud && window.FirebaseService?.isCloudReady) {
+                await window.FirebaseService.saveEvent(eventPayload);
+                showToast(editId ? 'האירוע עודכן בענן לכל המשפחה!' : 'האירוע נוסף ומסונכרן לכולם!');
+            } else {
+                if (editId) {
+                    const idx = events.findIndex(ev => ev.id === editId);
+                    if (idx !== -1) events[idx] = eventPayload;
+                } else {
+                    events.push(eventPayload);
+                }
+                localStorage.setItem(STORAGE_KEY, JSON.stringify(events));
+                renderApp();
+                showToast(editId ? 'האירוע עודכן בהצלחה!' : 'אירוע חדש נוסף ללוח!');
+            }
+
+            if (!editId) launchCelebrationConfetti();
+            closeModal();
+        }
+
+        function deleteEvent(eventId) {
+            const ev = events.find(item => item.id === eventId);
+            const name = ev ? ev.name : 'אירוע זה';
+            showConfirmModal(`האם למחוק את "${name}" עבור כולם?`, async () => {
+                if (isUsingCloud && window.FirebaseService?.isCloudReady) {
+                    await window.FirebaseService.deleteEvent(eventId);
+                    showToast('האירוע נמחק מהענן');
+                } else {
+                    events = events.filter(item => item.id !== eventId);
+                    localStorage.setItem(STORAGE_KEY, JSON.stringify(events));
+                    renderApp();
+                    showToast('האירוע נמחק בהצלחה');
+                }
+            });
+        }
+
+        function clearAllDemoEvents() {
+            showConfirmModal('האם לאפס את כל האירועים? הפעולה תנקה את הלוח עבור כל המשתמשים.', async () => {
+                if (isUsingCloud && window.FirebaseService?.isCloudReady) {
+                    const deletePromises = events.map(ev => window.FirebaseService.deleteEvent(ev.id));
+                    await Promise.all(deletePromises);
+                    showToast('כל האירועים נוקו מהענן בהצלחה');
+                } else {
+                    events = [];
+                    localStorage.setItem(STORAGE_KEY, JSON.stringify(events));
+                    renderApp();
+                    showToast('כל האירועים נוקו. הלוח מוכן להזנה אישית!');
+                }
+            });
+        }
+
+        async function importFamilyData(event) {
+            const fileReader = new FileReader();
+            if (!event.target.files[0]) return;
+            fileReader.readAsText(event.target.files[0], "UTF-8");
+            fileReader.onload = async (e) => {
+                try {
+                    const parsed = JSON.parse(e.target.result);
+                    if (Array.isArray(parsed)) {
+                        if (isUsingCloud && window.FirebaseService?.isCloudReady) {
+                            for (const ev of parsed) {
+                                await window.FirebaseService.saveEvent(ev);
+                            }
+                            showToast('כל האירועים הועלו וסונכרנו בענן בהצלחה!');
+                        } else {
+                            events = parsed;
+                            localStorage.setItem(STORAGE_KEY, JSON.stringify(events));
+                            renderApp();
+                            showToast('נתוני המשפחה נטענו בהצלחה!');
+                        }
+                    } else {
+                        showToast('קובץ לא תקין', true);
+                    }
+                } catch (err) {
+                    showToast('שגיאה בקריאת הקובץ', true);
+                }
+            };
+        }
+
+        /**
+         * Computes days left until the next occurrence of an event,
+         * along with which upcoming milestone age/year is being celebrated.
+         */
+        function getEventTiming(event) {
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+
+            const evtDateObj = new Date(event.date);
+            const month = evtDateObj.getMonth();
+            const day = evtDateObj.getDate();
+
+            // Next occurrence in current year or next year
+            let nextOccur = new Date(today.getFullYear(), month, day);
+            nextOccur.setHours(0, 0, 0, 0);
+
+            if (nextOccur < today) {
+                nextOccur.setFullYear(today.getFullYear() + 1);
+            }
+
+            const diffTime = nextOccur.getTime() - today.getTime();
+            const daysLeft = Math.round(diffTime / (1000 * 60 * 60 * 24));
+
+            // Calculating milestone (e.g., turning 65, or 10th anniversary)
+            let milestoneNumber = null;
+            if (event.originalYear) {
+                const orig = parseInt(event.originalYear, 10);
+                if (!isNaN(orig) && orig > 1900) {
+                    milestoneNumber = nextOccur.getFullYear() - orig;
+                }
+            }
+
+            return {
+                daysLeft,
+                nextOccurrenceDate: nextOccur,
+                milestoneNumber,
+                isToday: daysLeft === 0,
+                isUpcomingSoon: daysLeft > 0 && daysLeft <= 7
+            };
+        }
+
+        function renderApp() {
+            const searchQuery = document.getElementById('searchInput').value.trim().toLowerCase();
+            const typeFilter = document.getElementById('eventTypeFilter').value;
+
+            // 1. Filter events based on active filters
+            let filtered = events.filter(ev => {
+                // Branch
+                if (currentFilterBranch !== 'all' && ev.branch !== currentFilterBranch) {
+                    return false;
+                }
+                // Event Type
+                if (typeFilter !== 'all' && ev.type !== typeFilter) {
+                    return false;
+                }
+                // Text Search
+                if (searchQuery) {
+                    const matchName = ev.name.toLowerCase().includes(searchQuery);
+                    const matchNotes = (ev.notes || '').toLowerCase().includes(searchQuery);
+                    if (!matchName && !matchNotes) return false;
+                }
+                return true;
+            });
+
+            // 2. Sort by days left until next celebration
+            filtered.sort((a, b) => {
+                const timingA = getEventTiming(a);
+                const timingB = getEventTiming(b);
+                return timingA.daysLeft - timingB.daysLeft;
+            });
+
+            document.getElementById('filteredCountBadge').innerText = filtered.length;
+
+            if (currentTab === 'timeline') {
+                renderTimeline(filtered);
+            } else {
+                renderCalendar();
+            }
+        }
+
+        function renderTimeline(eventList) {
+            const container = document.getElementById('eventsContainer');
+            const urgentHighlights = document.getElementById('urgentHighlights');
+
+            // Find events happening today or within the next 7 days
+            const todayEvents = eventList.filter(ev => getEventTiming(ev).isToday);
+            const soonEvents = eventList.filter(ev => getEventTiming(ev).isUpcomingSoon);
+
+            if (todayEvents.length > 0 || soonEvents.length > 0) {
+                urgentHighlights.classList.remove('hidden');
+                let highlightHtml = `<div class="bg-gradient-to-r from-amber-500 via-orange-500 to-rose-500 rounded-3xl p-5 text-white shadow-lg space-y-3">
+                    <div class="flex items-center gap-2 font-bold text-lg">
+                        <i class="fa-solid fa-bell animate-bounce text-yellow-200"></i>
+                        <span>שימו לב! אירועים משפחתיים בימים הקרובים:</span>
+                    </div>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-3">`;
+
+                todayEvents.forEach(ev => {
+                    const timing = getEventTiming(ev);
+                    highlightHtml += `
+                        <div class="bg-white/20 backdrop-blur-md p-3.5 rounded-2xl flex items-center justify-between">
+                            <div class="flex items-center gap-3">
+                                <span class="bg-red-500 text-white text-xs font-black px-2.5 py-1 rounded-full uppercase tracking-wider animate-pulse">היום!</span>
+                                <div>
+                                    <h4 class="font-bold text-base">${escapeHtml(ev.name)}</h4>
+                                    <p class="text-xs text-orange-100">${typeMetadata[ev.type]?.label || 'אירוע'} ${timing.milestoneNumber ? `(חוגג/ת ${timing.milestoneNumber})` : ''}</p>
+                                </div>
+                            </div>
+                            <button onclick="quickWishForEvent('${ev.id}')" class="bg-white text-orange-600 hover:bg-orange-50 px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1 shadow-sm">
+                                <i class="fa-brands fa-whatsapp text-emerald-600 text-sm"></i> ברכו עכשיו!
+                            </button>
+                        </div>
+                    `;
+                });
+
+                soonEvents.forEach(ev => {
+                    const timing = getEventTiming(ev);
+                    highlightHtml += `
+                        <div class="bg-white/10 backdrop-blur-sm p-3.5 rounded-2xl flex items-center justify-between">
+                            <div class="flex items-center gap-3">
+                                <span class="bg-amber-400 text-amber-950 text-xs font-bold px-2 py-0.5 rounded-full">בעוד ${timing.daysLeft} ימים</span>
+                                <div>
+                                    <h4 class="font-bold text-sm text-white">${escapeHtml(ev.name)}</h4>
+                                    <p class="text-xs text-orange-200">${typeMetadata[ev.type]?.label || 'אירוע'}</p>
+                                </div>
+                            </div>
+                            <button onclick="quickWishForEvent('${ev.id}')" class="bg-white/20 hover:bg-white/30 text-white px-2.5 py-1.5 rounded-xl text-xs font-bold transition">
+                                <i class="fa-regular fa-paper-plane"></i>
+                            </button>
+                        </div>
+                    `;
+                });
+
+                highlightHtml += `</div></div>`;
+                urgentHighlights.innerHTML = highlightHtml;
+            } else {
+                urgentHighlights.classList.add('hidden');
+                urgentHighlights.innerHTML = '';
+            }
+
+            // Empty state
+            if (eventList.length === 0) {
+                container.innerHTML = `
+                    <div class="col-span-full py-16 text-center bg-white rounded-3xl border border-dashed border-orange-200 p-8">
+                        <div class="w-16 h-16 mx-auto mb-4 rounded-full bg-orange-100 text-orange-500 flex items-center justify-center text-2xl">
+                            <i class="fa-regular fa-calendar-xmark"></i>
+                        </div>
+                        <h3 class="text-lg font-bold text-stone-700">לא נמצאו אירועים מתאימים</h3>
+                        <p class="text-xs text-stone-500 mt-1 max-w-sm mx-auto">נסו לשנות את החיפוש או הסינונים, או הוסיפו אירוע משפחתי חדש באמצעות הכפתור בראש העמוד.</p>
+                        <button onclick="openModal()" class="mt-4 px-4 py-2 bg-orange-500 text-white text-xs font-bold rounded-xl hover:bg-orange-600 transition">
+                            הוספת אירוע חדש
+                        </button>
+                    </div>
+                `;
+                return;
+            }
+
+            // Generate event cards
+            let html = '';
+            document.getElementById('totalSavedCounter').innerText = events.length;
+            eventList.forEach(ev => {
+                const timing = getEventTiming(ev);
+                const meta = typeMetadata[ev.type] || typeMetadata.other;
+                const branchMeta = branchMetadata[ev.branch] || branchMetadata.both;
+
+                const dateObj = new Date(ev.date);
+                const dayOfMonth = dateObj.getDate();
+                const monthName = dateObj.toLocaleDateString('he-IL', { month: 'long' });
+
+                // Days left badge styling
+                let daysBadgeColor = 'bg-stone-100 text-stone-700 border-stone-200';
+                let daysLabel = `בעוד ${timing.daysLeft} ימים`;
+
+                if (timing.isToday) {
+                    daysBadgeColor = 'bg-rose-500 text-white border-rose-600 animate-pulse font-black';
+                    daysLabel = '🎉 היום חוגגים!';
+                } else if (timing.daysLeft === 1) {
+                    daysBadgeColor = 'bg-amber-500 text-white border-amber-600 font-bold';
+                    daysLabel = 'מחר בבוקר!';
+                } else if (timing.daysLeft <= 7) {
+                    daysBadgeColor = 'bg-orange-100 text-orange-700 border-orange-300 font-bold';
+                    daysLabel = `בעוד ${timing.daysLeft} ימים (השבוע)`;
+                }
+
+                // Milestone / age tag
+                let milestoneBadge = '';
+                if (timing.milestoneNumber !== null) {
+                    let word = 'גיל';
+                    if (ev.type === 'anniversary') word = 'שנות נישואין:';
+                    if (ev.type === 'bar_mitzvah') word = 'שנת';
+                    milestoneBadge = `
+                        <span class="inline-flex items-center gap-1 bg-amber-50 text-amber-900 border border-amber-200 px-2.5 py-1 rounded-xl text-xs font-bold">
+                            <i class="fa-solid fa-cake-candles text-amber-500"></i>
+                            ${word} ${timing.milestoneNumber}
+                        </span>
+                    `;
+                }
+
+                html += `
+                    <div class="event-card-bounce bg-white rounded-3xl p-5 shadow-md border ${timing.isToday ? 'border-orange-400 today-glow' : 'border-stone-100'} flex flex-col justify-between relative transition-all">
+                        <!-- Top Card Info -->
+                        <div>
+                            <div class="flex items-start justify-between gap-2 mb-3">
+                                <div class="flex items-center gap-2">
+                                    <div class="w-10 h-10 rounded-2xl flex items-center justify-center text-white ${meta.badgeBg} shadow-sm">
+                                        <i class="fa-solid ${meta.icon}"></i>
+                                    </div>
+                                    <div>
+                                        <span class="text-[11px] font-bold px-2 py-0.5 rounded-md ${branchMeta.tagClass}">
+                                            ${branchMeta.label}
+                                        </span>
+                                        <span class="text-[11px] font-semibold text-stone-400 mr-1">
+                                            ${meta.label}
+                                        </span>
+                                    </div>
+                                </div>
+                                <span class="text-xs px-3 py-1 rounded-xl border ${daysBadgeColor}">
+                                    ${daysLabel}
+                                </span>
+                            </div>
+
+                            <h3 class="text-lg font-black text-stone-800 tracking-tight mb-1 flex items-center justify-between">
+                                <span>${escapeHtml(ev.name)}</span>
+                            </h3>
+
+                            <!-- Event Date in Hebrew presentation -->
+                            <div class="flex items-center gap-2 text-stone-500 text-xs mb-3">
+                                <i class="fa-regular fa-calendar text-orange-500"></i>
+                                <span class="font-bold text-stone-700">${dayOfMonth} ב${monthName}</span>
+                                ${ev.originalYear ? `<span class="text-stone-400">(שנת ${ev.originalYear})</span>` : ''}
+                            </div>
+
+                            <!-- Milestone Tag & Notes -->
+                            <div class="space-y-2 mb-4">
+                                ${milestoneBadge}
+                                ${ev.notes ? `
+                                    <div class="bg-stone-50 rounded-xl p-2.5 text-xs text-stone-600 border border-stone-100 flex items-start gap-2">
+                                        <i class="fa-regular fa-note-sticky text-amber-500 mt-0.5"></i>
+                                        <p class="leading-relaxed">${escapeHtml(ev.notes)}</p>
+                                    </div>
+                                ` : ''}
+                            </div>
+                        </div>
+
+                        <!-- Card Action Footer -->
+                        <div class="pt-3 border-t border-stone-100 flex items-center justify-between gap-2 text-xs">
+                            <div class="flex items-center gap-1">
+                                <button onclick="openModal('${ev.id}')" title="עריכת אירוע" class="w-8 h-8 rounded-xl bg-stone-100 hover:bg-stone-200 text-stone-600 flex items-center justify-center transition">
+                                    <i class="fa-regular fa-pen-to-square"></i>
+                                </button>
+                                <button onclick="deleteEvent('${ev.id}')" title="מחיקת אירוע" class="w-8 h-8 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 flex items-center justify-center transition">
+                                    <i class="fa-regular fa-trash-can"></i>
+                                </button>
+                            </div>
+
+                            <div class="flex items-center gap-1.5">
+                                <button onclick="quickWishForEvent('${ev.id}')" class="px-3 py-1.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-900 font-bold border border-amber-200 flex items-center gap-1 transition">
+                                    <i class="fa-solid fa-wand-magic-sparkles text-amber-600"></i>
+                                    <span>ברכה</span>
+                                </button>
+                                <button onclick="directWhatsApp('${ev.id}')" class="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold flex items-center gap-1.5 transition shadow-sm">
+                                    <i class="fa-brands fa-whatsapp text-sm"></i>
+                                    <span>וואטסאפ</span>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            });
+
+            container.innerHTML = html;
+        }
+
+        function renderCalendar() {
+            const grid = document.getElementById('calendarGrid');
+            const titleEl = document.getElementById('calendarMonthTitle');
+
+            const year = calendarDate.getFullYear();
+            const month = calendarDate.getMonth();
+
+            const monthNamesHe = [
+                'ינואר', 'פברואר', 'מרץ', 'אפריל', 'מאי', 'יוני',
+                'יולי', 'אוגוסט', 'ספטמבר', 'אוקטובר', 'נובמבר', 'דצמבר'
+            ];
+            titleEl.innerText = `${monthNamesHe[month]} ${year}`;
+
+            // First day of this month
+            const firstDay = new Date(year, month, 1);
+            // In JS getDay(): 0 is Sunday, 1 is Monday ... 6 is Saturday
+            const startingDayOfWeek = firstDay.getDay(); 
+
+            // Total days in this month
+            const daysInMonth = new Date(year, month + 1, 0).getDate();
+
+            // Total days in previous month (for leading blank padding)
+            const daysInPrevMonth = new Date(year, month, 0).getDate();
+
+            const today = new Date();
+            const isCurrentMonth = today.getFullYear() === year && today.getMonth() === month;
+
+            let html = '';
+
+            // Leading days from previous month
+            for (let i = 0; i < startingDayOfWeek; i++) {
+                const prevDayNum = daysInPrevMonth - startingDayOfWeek + 1 + i;
+                html += `
+                    <div class="min-h-24 sm:min-h-28 p-1.5 sm:p-2 bg-stone-50/50 rounded-2xl border border-stone-100/60 text-stone-300 select-none">
+                        <span class="text-xs font-bold">${prevDayNum}</span>
+                    </div>
+                `;
+            }
+
+            // Active Month Days
+            for (let d = 1; d <= daysInMonth; d++) {
+                const isRealToday = isCurrentMonth && today.getDate() === d;
+                
+                // Find all events occurring on this day and month (respecting active filters)
+                const searchQuery = document.getElementById('searchInput').value.trim().toLowerCase();
+                const typeFilter = document.getElementById('eventTypeFilter').value;
+
+                const dayEvents = events.filter(ev => {
+                    const evDate = new Date(ev.date);
+                    if (evDate.getMonth() !== month || evDate.getDate() !== d) return false;
+
+                    // Branch filter
+                    if (currentFilterBranch !== 'all' && ev.branch !== currentFilterBranch) return false;
+                    // Type filter
+                    if (typeFilter !== 'all' && ev.type !== typeFilter) return false;
+                    // Search
+                    if (searchQuery) {
+                        const mName = ev.name.toLowerCase().includes(searchQuery);
+                        const mNotes = (ev.notes || '').toLowerCase().includes(searchQuery);
+                        if (!mName && !mNotes) return false;
+                    }
+                    return true;
+                });
+
+                html += `
+                    <div class="min-h-24 sm:min-h-28 p-1.5 sm:p-2 bg-white rounded-2xl border ${isRealToday ? 'border-orange-500 shadow-md ring-2 ring-orange-200' : 'border-stone-100 hover:border-orange-200'} flex flex-col justify-between transition group">
+                        <div class="flex items-center justify-between mb-1">
+                            <span class="text-xs sm:text-sm font-black ${isRealToday ? 'bg-orange-500 text-white w-6 h-6 rounded-full flex items-center justify-center' : 'text-stone-700'}">
+                                ${d}
+                            </span>
+                            ${dayEvents.length > 0 ? `<span class="w-2 h-2 rounded-full bg-rose-500 animate-ping"></span>` : ''}
+                        </div>
+
+                        <!-- Event chips on this day -->
+                        <div class="space-y-1 overflow-y-auto max-h-16 sm:max-h-20">
+                            ${dayEvents.map(ev => {
+                                const meta = typeMetadata[ev.type] || typeMetadata.other;
+                                return `
+                                    <div onclick="quickWishForEvent('${ev.id}')" title="${escapeHtml(ev.name)} - ${meta.label}" 
+                                         class="cursor-pointer text-[10px] sm:text-xs font-bold px-1.5 py-0.5 rounded-lg truncate ${meta.color} flex items-center gap-1 hover:opacity-85 shadow-2xs">
+                                        <i class="fa-solid ${meta.icon} text-[9px]"></i>
+                                        <span class="truncate">${escapeHtml(ev.name)}</span>
+                                    </div>
+                                `;
+                            }).join('')}
+                        </div>
+
+                        <!-- Quick add button on hover -->
+                        <div class="opacity-0 group-hover:opacity-100 transition pt-1 text-left">
+                            <button onclick="openModalWithDate(${year}, ${month}, ${d})" class="text-[10px] text-orange-600 font-bold hover:underline">
+                                + הוסף
+                            </button>
+                        </div>
+                    </div>
+                `;
+            }
+
+            grid.innerHTML = html;
+        }
+
+        function changeMonth(delta) {
+            calendarDate.setMonth(calendarDate.getMonth() + delta);
+            renderCalendar();
+        }
+
+        function goToCurrentMonth() {
+            calendarDate = new Date();
+            renderCalendar();
+        }
+
+        function switchTab(tab) {
+            currentTab = tab;
+            const timelineView = document.getElementById('timelineView');
+            const calendarView = document.getElementById('calendarView');
+            const tabTimelineBtn = document.getElementById('tab-timeline-btn');
+            const tabCalendarBtn = document.getElementById('tab-calendar-btn');
+
+            if (tab === 'timeline') {
+                timelineView.classList.remove('hidden');
+                calendarView.classList.add('hidden');
+                tabTimelineBtn.className = "px-3 py-1.5 rounded-lg text-xs font-bold transition bg-white shadow-sm text-orange-600";
+                tabCalendarBtn.className = "px-3 py-1.5 rounded-lg text-xs font-bold transition text-stone-600 hover:text-stone-900";
+            } else {
+                timelineView.classList.add('hidden');
+                calendarView.classList.remove('hidden');
+                tabCalendarBtn.className = "px-3 py-1.5 rounded-lg text-xs font-bold transition bg-white shadow-sm text-orange-600";
+                tabTimelineBtn.className = "px-3 py-1.5 rounded-lg text-xs font-bold transition text-stone-600 hover:text-stone-900";
+            }
+            renderApp();
+        }
+
+        function setBranchFilter(branch) {
+            currentFilterBranch = branch;
+            const buttons = ['all', 'my_side', 'partner_side', 'both'];
+            buttons.forEach(b => {
+                const btn = document.getElementById(`btn-branch-${b}`);
+                if (!btn) return;
+                if (b === branch) {
+                    btn.className = "filter-branch-btn px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition shadow-sm bg-orange-500 text-white";
+                } else {
+                    btn.className = "filter-branch-btn px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold transition bg-stone-100 hover:bg-orange-100 text-stone-700";
+                }
+            });
+            renderApp();
+        }
+
+        function openModal(eventId = null) {
+            const modal = document.getElementById('eventModal');
+            const form = document.getElementById('eventForm');
+            const titleEl = document.getElementById('modalTitle');
+            const iconEl = document.getElementById('modalIcon');
+            const editIdEl = document.getElementById('editEventId');
+
+            form.reset();
+            editIdEl.value = '';
+
+            if (eventId) {
+                const ev = events.find(item => item.id === eventId);
+                if (ev) {
+                    titleEl.innerText = 'עריכת אירוע משפחתי';
+                    iconEl.className = 'fa-solid fa-pen-to-square';
+                    editIdEl.value = ev.id;
+                    document.getElementById('formName').value = ev.name;
+                    document.getElementById('formType').value = ev.type;
+                    document.getElementById('formBranch').value = ev.branch;
+                    document.getElementById('formDate').value = ev.date;
+                    document.getElementById('formOriginalYear').value = ev.originalYear || '';
+                    document.getElementById('formPhone').value = ev.phone || '';
+                    document.getElementById('formNotes').value = ev.notes || '';
+                }
+            } else {
+                titleEl.innerText = 'הוספת אירוע משפחתי חדש';
+                iconEl.className = 'fa-solid fa-calendar-plus';
+                // Default date to today
+                const todayStr = new Date().toISOString().split('T')[0];
+                document.getElementById('formDate').value = todayStr;
+            }
+
+            modal.classList.remove('hidden');
+        }
+
+        function openModalWithDate(year, month, day) {
+            openModal();
+            const formattedMonth = String(month + 1).padStart(2, '0');
+            const formattedDay = String(day).padStart(2, '0');
+            document.getElementById('formDate').value = `${year}-${formattedMonth}-${formattedDay}`;
+        }
+
+        function closeModal() {
+            document.getElementById('eventModal').classList.add('hidden');
+        }
+
+        function toggleHelpGuide() {
+            const guide = document.getElementById('helpGuideBanner');
+            guide.classList.toggle('hidden');
+        }
+
+        function exportFamilyData() {
+            const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(events, null, 2));
+            const dlAnchor = document.createElement('a');
+            dlAnchor.setAttribute("href", dataStr);
+            dlAnchor.setAttribute("download", "family_events_backup.json");
+            dlAnchor.click();
+            showToast('קובץ הגיבוי הורד בהצלחה למחשב/טלפון');
+        }
+
+        function openWishModal(prefilledName = '', prefilledPhone = '', prefilledType = 'birthday') {
+            document.getElementById('wishTargetName').value = prefilledName;
+            document.getElementById('wishTargetPhone').value = prefilledPhone;
+            document.getElementById('wishEventType').value = prefilledType;
+            generateCustomWish();
+            document.getElementById('wishModal').classList.remove('hidden');
+        }
+
+        function closeWishModal() {
+            document.getElementById('wishModal').classList.add('hidden');
+        }
+
+        function quickWishForEvent(eventId) {
+            const ev = events.find(item => item.id === eventId);
+            if (!ev) return;
+            const timing = getEventTiming(ev);
+            openWishModal(ev.name, ev.phone || '', ev.type);
+        }
+
+        function generateCustomWish() {
+            const name = document.getElementById('wishTargetName').value.trim() || 'יקירנו';
+            const type = document.getElementById('wishEventType').value;
+            const tone = document.getElementById('wishTone').value;
+            const output = document.getElementById('wishOutputText');
+
+            const templates = {
+                birthday: {
+                    warm: `מזל טוב ענק ל${name} היקר/ה! 🎉 שתהיה שנה מלאה בבריאות איתנה, הגשמת חלומות, חיוכים ושמחה אמיתית בכל רגע. אוהבים ומחבקים חזק מכל המשפחה! ❤️`,
+                    funny: `יום הולדת שמח ל${name}! 🎂 תזכור/תזכרי שהגיל הוא רק מספר... שרק הולך ועולה! 😉 מאחלים לך עוד המון שנים של צחוק, שקט נפשי ועוגות בלי קלוריות! 🥳`,
+                    short: `מזל טוב ${name}! 🎈 המון בריאות, אושר ושמחה עד 120! שיהיה יום הולדת מהמם!`,
+                    traditional: `ל${name} היקר/ה, מזל טוב וברכת שמיים! שתזכה/י לשנים רבות וטובות של בריאות, נחת, ברכה והצלחה בכל מעשי ידיך!`
+                },
+                anniversary: {
+                    warm: `יום נישואין שמח ל${name}! 💍 איזה כיף לראות את האהבה, החברות והקן המשפחתי המדהים שבניתם יחד. מאחלים לכם עוד עשרות שנים מאושרות יחד יד ביד! 🥂`,
+                    funny: `יום נישואין שמח ל${name}! 🥂 מי היה מאמין ששרדתם עוד שנה יחד בלי לריב על מי זורק את הזבל? 😉 שתמשיכו להצחיק ולאהוב אחד את השני תמיד!`,
+                    short: `יום נישואין שמח ל${name}! שתמיד תהיו מאושרים ואוהבים יחד! ❤️`,
+                    traditional: `מזל טוב ליום הנישואין ל${name}! יהי רצון ששלום בית, שמחה וברכה ימשיכו ללוות את ביתכם תמיד!`
+                },
+                bar_mitzvah: {
+                    warm: `מזל טוב ענק ל${name} לרגל הגעתך לעול מצוות! ✡️ גאים בך כל כך ושמחים לראות אותך גדל/ה ומאיר/ה את עולמנו. שתמשיך/י להביא גאווה ונחת לכל המשפחה!`,
+                    funny: `מזל טוב ל${name}! עכשיו שאת/ה בוגר/ת באופן רשמי... זה אומר שאפשר לבקש ממך לשטוף כלים? 😉 המון הצלחה, שמחה וחגיגות שמחות!`,
+                    short: `מזל טוב ענק ל${name} לרגל בר/בת המצווה! המון הצלחה, שמחה ובריאות בכל דרך! 🎉`,
+                    traditional: `מזל טוב וסימן טוב ל${name} ולכל המשפחה! שיזכה/תזכה לעלות מעלה מעלה במעלות התורה והמעשים הטובים, מתוך בריאות ואושר!`
+                },
+                army: {
+                    warm: `ל${name} האהוב/ה, גאים בך עד השמיים ביום החשוב הזה! 🪖 שתלך/י לשלום ותחזור/י לשלום, שמור/י על עצמך ותדע/י שאנחנו כאן תמיד מחכים עם חיבוק חם ואוכל של בית!`,
+                    funny: `גיוס קל ושפשוף נעים ל${name}! 🪖 זכור/י: צה"ל זה לא מלון, אבל לפחות שבתות בבית יקבלו פתאום משמעות של גן עדן! שפשוף נעים ותשמור/תשמרי על עצמך!`,
+                    short: `גיוס קל ומוצלח ל${name}! שיעבור מהר, בטוח ומעצים! אוהבים אותך! 🇮🇱`,
+                    traditional: `ל${name}, 'ה' ישמור צאתך ובואך מעתה ועד עולם'. ברכת הצלחה, שמירה עליונה ודרך צלחה בשירותך הצבאי!`
+                },
+                general: {
+                    warm: `ל${name} היקר/ה, איחולים מכל הלב לרגל המאורע המשמח! שמחים בשמחתכם ומאחלים רק טוב, בריאות ונחת תמיד!`,
+                    funny: `כל סיבה למסיבה איתך היא מבורכת! 🎉 מזל טוב והמון שמחה ל${name}!`,
+                    short: `מזל טוב מכל הלב ל${name}! שירבו שמחות! ✨`,
+                    traditional: `ברכות חמות ל${name}, שיהיה המאורע בסימן טוב ובמזל טוב לכל בני המשפחה!`
+                }
+            };
+
+            const toneMap = templates[type] || templates.birthday;
+            output.value = toneMap[tone] || toneMap.warm;
+        }
+
+        function copyWishText() {
+            const text = document.getElementById('wishOutputText').value;
+            if (!text) return;
+
+            const textarea = document.createElement('textarea');
+            textarea.value = text;
+            textarea.style.position = 'fixed';
+            textarea.style.opacity = '0';
+            document.body.appendChild(textarea);
+            textarea.select();
+            try {
+                document.execCommand('copy');
+                const label = document.getElementById('copyWishBtnLabel');
+                label.innerText = 'הועתק ללוח!';
+                setTimeout(() => label.innerText = 'העתקת ברכה', 2000);
+                showToast('הברכה הועתקה ללוח בהצלחה!');
+            } catch (err) {
+                showToast('שגיאה בהעתקה', true);
+            }
+            document.body.removeChild(textarea);
+        }
+
+        function sendWishViaWhatsApp() {
+            const text = document.getElementById('wishOutputText').value;
+            const phoneInput = document.getElementById('wishTargetPhone').value.trim();
+            openWhatsAppWithText(phoneInput, text);
+        }
+
+        function directWhatsApp(eventId) {
+            const ev = events.find(item => item.id === eventId);
+            if (!ev) return;
+            const timing = getEventTiming(ev);
+            let msg = `היי ${ev.name}, מזל טוב ואיחולים חמים מכל הלב! 🎉❤️`;
+            if (ev.type === 'birthday') {
+                msg = `מזל טוב ליום ההולדת ${ev.name}! 🎂 שתהיה שנה מוצלחת, מלאה בבריאות, אושר ושמחה גדולה!`;
+            } else if (ev.type === 'anniversary') {
+                msg = `יום נישואין שמח ${ev.name}! 🥂 מאחלים לכם עוד המון שנים מאושרות ומלאות אהבה יחד!`;
+            }
+            openWhatsAppWithText(ev.phone, msg);
+        }
+
+        function openWhatsAppWithText(phone, text) {
+            let cleanPhone = (phone || '').replace(/[^0-9]/g, '');
+            // Convert standard 05X Israeli format to international 9725X
+            if (cleanPhone.startsWith('05')) {
+                cleanPhone = '972' + cleanPhone.slice(1);
+            }
+            const encoded = encodeURIComponent(text);
+            let url = cleanPhone ? `https://wa.me/${cleanPhone}?text=${encoded}` : `https://wa.me/?text=${encoded}`;
+            window.open(url, '_blank');
+        }
+
+        function showToast(message, isError = false) {
+            const toast = document.getElementById('toastNotification');
+            const msgEl = document.getElementById('toastMessage');
+            const iconEl = document.getElementById('toastIcon');
+
+            msgEl.innerText = message;
+            if (isError) {
+                iconEl.className = 'fa-solid fa-circle-exclamation text-rose-400 text-lg';
+            } else {
+                iconEl.className = 'fa-solid fa-circle-check text-emerald-400 text-lg';
+            }
+
+            toast.classList.remove('opacity-0', 'translate-y-20', 'pointer-events-none');
+            setTimeout(() => {
+                toast.classList.add('opacity-0', 'translate-y-20', 'pointer-events-none');
+            }, 3000);
+        }
+
+        function launchCelebrationConfetti() {
+            if (typeof confetti === 'function') {
+                confetti({
+                    particleCount: 80,
+                    spread: 70,
+                    origin: { y: 0.6 }
+                });
+            }
+        }
+
+        function escapeHtml(string) {
+            if (!string) return '';
+            const entityMap = {
+                '&': '&amp;',
+                '<': '&lt;',
+                '>': '&gt;',
+                '"': '&quot;',
+                "'": '&#39;'
+            };
+            return String(string).replace(/[&<>"']/g, s => entityMap[s]);
+        }
+
+        // Close modals on escape key
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                closeModal();
+                closeWishModal();
+            }
+        });
+    </script>
+</body>
+</html>
